@@ -98,7 +98,7 @@ export default class PandocPluginSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName("Export folder")
-            .setDesc("Absolute path to an export folder, like 'C:\Users\Example\Documents' or '/home/user/zettelkasten'. If left blank, files are saved next to where they were exported from.")
+            .setDesc("Absolute or relative path to an export folder. Relative paths are resolved from the vault root (e.g. '../Pandoc'). If left blank, files are saved next to where they were exported from.")
             .addText(text => text
                 .setPlaceholder('same as target')
                 .setValue(this.plugin.settings.outputFolder)

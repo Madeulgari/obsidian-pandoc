@@ -95,7 +95,10 @@ export default class PandocPlugin extends Plugin {
 
         let outputFile: string = replaceFileExtension(inputFile, extension);
         if (this.settings.outputFolder) {
-            outputFile = path.join(this.settings.outputFolder, path.basename(outputFile));
+            const resolvedFolder = path.isAbsolute(this.settings.outputFolder)
+                ? this.settings.outputFolder
+                : path.resolve(this.vaultBasePath(), this.settings.outputFolder);
+            outputFile = path.join(resolvedFolder, path.basename(outputFile));
         }
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         

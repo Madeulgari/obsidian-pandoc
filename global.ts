@@ -1,6 +1,13 @@
 
 import * as fs from 'fs';
 
+export interface PreprocessRule {
+    find: string;       // search string or regex pattern
+    replace: string;    // replacement string (may use $1, $2 … for regex captures)
+    isRegex: boolean;   // treat `find` as a regular expression?
+    enabled: boolean;   // allow individual rules to be toggled without deleting them
+}
+
 export interface PandocPluginSettings {
     // Show a command like `pandoc -o Output.html -t html -f commonmark Input.md`
     //  in the UI as an example of how to do something similar in the terminal
@@ -30,6 +37,10 @@ export interface PandocPluginSettings {
     extraArguments: string,
     // Export from HTML or from markdown?
     exportFrom: 'html' | 'md',
+    // Pre-processing: fix _underscore_ italic syntax before export
+    underscoreItalicFix: boolean,
+    // Pre-processing: user-defined find/replace rules applied before export
+    preprocessRules: PreprocessRule[],
 }
 
 export const DEFAULT_SETTINGS: PandocPluginSettings = {
@@ -46,6 +57,8 @@ export const DEFAULT_SETTINGS: PandocPluginSettings = {
     outputFolder: null,
     extraArguments: '',
     exportFrom: 'html',
+    underscoreItalicFix: false,
+    preprocessRules: [],
 }
 
 export function replaceFileExtension(file: string, ext: string): string {

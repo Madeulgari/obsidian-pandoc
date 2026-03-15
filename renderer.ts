@@ -16,6 +16,7 @@ import { FileSystemAdapter, MarkdownRenderer, MarkdownView, Notice } from 'obsid
 
 import PandocPlugin from './main';
 import { PandocPluginSettings } from './global';
+import { applyPreprocess } from './preprocess';
 import mathJaxFontCSS from './styles/mathjax-css';
 import appCSS, { variables as appCSSVariables } from './styles/app-css';
 import { outputFormats } from 'pandoc';
@@ -27,7 +28,7 @@ export default async function render (plugin: PandocPlugin, view: MarkdownView,
     Promise<{ html: string, metadata: { [index: string]: string } }>
 {
     // Use Obsidian's markdown renderer to render to a hidden <div>
-    const markdown = view.data;
+    const markdown = applyPreprocess(view.data, plugin.settings);
     const wrapper = document.createElement('div');
     wrapper.style.display = 'hidden';
     document.body.appendChild(wrapper);

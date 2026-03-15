@@ -6,8 +6,9 @@
  *
  */
 
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, PluginSettingTab, Setting, ButtonComponent } from 'obsidian';
 import PandocPlugin from './main';
+import { PreprocessRule } from './global';
 
 export default class PandocPluginSettingTab extends PluginSettingTab {
     plugin: PandocPlugin;
@@ -150,5 +151,114 @@ export default class PandocPluginSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 })
                 .inputEl.style.minHeight='150px');
+
+        // ── Pre-processing ──────────────────────────────────────────────────
+
+        containerEl.createEl('h3', { text: 'Pre-processing' });
+        containerEl.createEl('p', {
+            text: 'These substitutions are applied to the markdown content in memory before export. The original file is never modified.',
+            cls: 'setting-item-description',
+        });
+
+        new Setting(containerEl)
+            .setName('Fix underscore italic syntax')
+            .setDesc('Converts _text_ to *text* before export, fixing italic rendering issues with Korean and other non-Latin text.')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.underscoreItalicFix)
+                .onChange(async (value: boolean) => {
+                    this.plugin.settings.underscoreItalicFix = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        // User-defined rules section
+        containerEl.createEl('h4', { text: 'Custom find & replace rules' });
+
+        const rulesContainer = containerEl.createDiv({ cls: 'pandoc-preprocess-rules' });
+        const renderRules = () => {
+            rulesContainer.empty();
+            const rules = this.plugin.settings.preprocessRules;
+            if (rules.length === 0) {
+                rulesContainer.createEl('p', {
+                    text: 'No rules defined.',
+                    cls: 'setting-item-description',
+                });
+            }
+            rules.forEach((rule: PreprocessRule, index: number) => {
+                const row = rulesContainer.createDiv({ cls: 'pandoc-preprocess-rule-row' });
+                row.style.display = 'flex';
+                row.style.alignItems = 'center';
+                row.style.gap = '8px';
+                row.style.marginBottom = '6px';
+
+                // Enabled toggle
+                const enabledToggle = row.createEl('input', { type: 'checkbox' } as any);
+                (enabledToggle as HTMLInputElement).checked = rule.enabled;
+                (enabledToggle as HTMLInputElement).title = 'Enable/disable this rule';
+                enabledToggle.addEventListener('change', async () => {
+                    rules[index].enabled = (enabledToggle as HTMLInputElement).checked;
+                    await this.plugin.saveSettings();
+                });
+
+                // Find input
+                const findInput = row.createEl('input', { type: 'text' } as any) as HTMLInputElement;
+                findInput.placeholder = rule.isRegex ? 'Regex pattern' : 'Find';
+                findInput.value = rule.find;
+                findInput.style.flex = '1';
+                findInput.addEventListener('change', async () => {
+                    rules[index].find = findInput.value;
+                    await this.plugin.saveSettings();
+                });
+
+                // Replace input
+                const replaceInput = row.createEl('input', { type: 'text' } as any) as HTMLInputElement;
+                replaceInput.placeholder = 'Replace with';
+                replaceInput.value = rule.replace;
+                replaceInput.style.flex = '1';
+                replaceInput.addEventListener('change', async () => {
+                    rules[index].replace = replaceInput.value;
+                    await this.plugin.saveSettings();
+                });
+
+                // Regex toggle
+                const regexLabel = row.createEl('label');
+                regexLabel.style.display = 'flex';
+                regexLabel.style.alignItems = 'center';
+                regexLabel.style.gap = '4px';
+                regexLabel.style.whiteSpace = 'nowrap';
+                const regexCheckbox = regexLabel.createEl('input', { type: 'checkbox' } as any) as HTMLInputElement;
+                regexCheckbox.checked = rule.isRegex;
+                regexLabel.createSpan({ text: 'Regex' });
+                regexCheckbox.addEventListener('change', async () => {
+                    rules[index].isRegex = regexCheckbox.checked;
+                    findInput.placeholder = regexCheckbox.checked ? 'Regex pattern' : 'Find';
+                    await this.plugin.saveSettings();
+                });
+
+                // Delete button
+                const deleteBtn = row.createEl('button', { text: '✕' });
+                deleteBtn.title = 'Remove this rule';
+                deleteBtn.addEventListener('click', async () => {
+                    rules.splice(index, 1);
+                    await this.plugin.saveSettings();
+                    renderRules();
+                });
+            });
+        };
+
+        renderRules();
+
+        new Setting(containerEl)
+            .addButton(btn => btn
+                .setButtonText('+ Add rule')
+                .onClick(async () => {
+                    this.plugin.settings.preprocessRules.push({
+                        find: '',
+                        replace: '',
+                        isRegex: false,
+                        enabled: true,
+                    });
+                    await this.plugin.saveSettings();
+                    renderRules();
+                }));
     }
 }

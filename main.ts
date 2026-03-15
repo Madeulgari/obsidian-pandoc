@@ -17,6 +17,7 @@ import * as YAML from 'yaml';
 import * as temp from 'temp';
 
 import render from './renderer';
+import { applyPreprocess } from './preprocess';
 import PandocPluginSettingTab from './settings';
 import { PandocPluginSettings, DEFAULT_SETTINGS, replaceFileExtension } from './global';
 export default class PandocPlugin extends Plugin {
@@ -134,15 +135,23 @@ export default class PandocPlugin extends Plugin {
                     break;
                 }
                 case 'md': {
+                    // Read the source markdown, apply pre-processing in memory (original file untouched),
+                    // then write the result to a temp file so Pandoc receives the transformed content.
+                    const rawMarkdown = await fs.promises.readFile(inputFile, 'utf8');
+                    const processedMarkdown = applyPreprocess(rawMarkdown, this.settings);
+                    const tempMdFile = temp.path({ suffix: '.md' });
+                    await fs.promises.writeFile(tempMdFile, processedMarkdown, 'utf8');
                     const result = await pandoc(
                         {
-                            file: inputFile, format: 'markdown',
+                            file: tempMdFile, format: 'markdown',
                             pandoc: this.settings.pandoc, pdflatex: this.settings.pdflatex,
                             directory: path.dirname(inputFile),
                         },
                         { file: outputFile, format },
                         this.settings.extraArguments.split('\n')
                     );
+                    // Clean up temp file (best-effort)
+                    fs.promises.unlink(tempMdFile).catch(() => {});
                     error = result.error;
                     command = result.command;
                     break;

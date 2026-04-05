@@ -17,7 +17,7 @@ import * as YAML from 'yaml';
 import * as temp from 'temp';
 
 import render from './renderer';
-import { applyPreprocess } from './preprocess';
+import { applyPreprocess, extractKoreanMetadata } from './preprocess';
 import PandocPluginSettingTab from './settings';
 import { PandocPluginSettings, DEFAULT_SETTINGS, replaceFileExtension } from './global';
 export default class PandocPlugin extends Plugin {
@@ -88,6 +88,7 @@ export default class PandocPlugin extends Plugin {
 
     async startPandocExport(inputFile: string, format: OutputFormat, extension: string, shortName: string) {
         new Notice(`Exporting ${inputFile} to ${shortName}`);
+        console.log(`[Pandoc] Exporting ${inputFile} to ${shortName}`);
 
         // Instead of using Pandoc to process the raw Markdown, we use Obsidian's
         // internal markdown renderer, and process the HTML it generates instead.
@@ -114,6 +115,7 @@ export default class PandocPlugin extends Plugin {
                         // Write to HTML file
                         await fs.promises.writeFile(outputFile, html);
                         new Notice('Successfully exported via Pandoc to ' + outputFile);
+                        console.log('[Pandoc] Successfully exported to ' + outputFile);
                         return;
                     } else {
                         // Spawn Pandoc
@@ -135,23 +137,64 @@ export default class PandocPlugin extends Plugin {
                     break;
                 }
                 case 'md': {
-                    // Read the source markdown, apply pre-processing in memory (original file untouched),
-                    // then write the result to a temp file so Pandoc receives the transformed content.
                     const rawMarkdown = await fs.promises.readFile(inputFile, 'utf8');
                     const processedMarkdown = applyPreprocess(rawMarkdown, this.settings);
+
+                    // Fix image paths using Obsidian's own file resolution,
+                    // so attachments stored anywhere in the vault are found correctly.
+                    const vaultBase = this.vaultBasePath();
+                    const subfolder = inputFile.substring(vaultBase.length + 1);
+                    const fixedMarkdown = processedMarkdown.replace(
+                        /!\[([^\]]*)\]\(([^)]+)\)/g,
+                        (_match, alt, src) => {
+                            if (src.startsWith('http') || src.startsWith('data:')) return _match;
+                            const decoded = decodeURIComponent(src);
+                            // Strip any leading path — Obsidian resolves by filename
+                            const filename = path.basename(decoded);
+                            const file = this.app.metadataCache.getFirstLinkpathDest(filename, subfolder);
+                            if (file) {
+                                const resolved = path.join(vaultBase, file.path);
+                                console.log('[Pandoc] Resolving image:', src, '→', resolved);
+                                return `![${alt}](${resolved})`;
+                            }
+                            console.warn('[Pandoc] Could not resolve image:', src);
+                            return _match;
+                        }
+                    );
+
                     const tempMdFile = temp.path({ suffix: '.md' });
-                    await fs.promises.writeFile(tempMdFile, processedMarkdown, 'utf8');
+                    await fs.promises.writeFile(tempMdFile, fixedMarkdown, 'utf8');
+
+                    const baseName = path.basename(inputFile, path.extname(inputFile));
+                    const mdMetadata: Record<string, any> = {};
+                    if (this.settings.mapKoreanMetadata) {
+                        const koreanMeta = extractKoreanMetadata(rawMarkdown);
+                        if (koreanMeta.author) mdMetadata.author = koreanMeta.author;
+                        if (koreanMeta.title) {
+                            mdMetadata.title = koreanMeta.title;
+                            mdMetadata.subtitle = baseName;
+                        } else {
+                            mdMetadata.title = baseName;
+                        }
+                    } else {
+                        mdMetadata.title = baseName;
+                    }
+                    const mdMetadataFile = temp.path();
+                    await fs.promises.writeFile(mdMetadataFile, YAML.stringify(mdMetadata));
+
                     const result = await pandoc(
                         {
                             file: tempMdFile, format: 'markdown',
                             pandoc: this.settings.pandoc, pdflatex: this.settings.pdflatex,
                             directory: path.dirname(inputFile),
+                            metadataFile: mdMetadataFile,
                         },
                         { file: outputFile, format },
                         this.settings.extraArguments.split('\n')
                     );
-                    // Clean up temp file (best-effort)
+                    // Clean up temp files (best-effort)
                     fs.promises.unlink(tempMdFile).catch(() => {});
+                    fs.promises.unlink(mdMetadataFile).catch(() => {});
                     error = result.error;
                     command = result.command;
                     break;
@@ -161,17 +204,20 @@ export default class PandocPlugin extends Plugin {
             if (error.length) {
                 new Notice('Exported via Pandoc to ' + outputFile + ' with warnings');
                 new Notice('Pandoc warnings:' + error, 10000);
+                console.warn('[Pandoc] Exported with warnings to ' + outputFile);
+                console.warn('[Pandoc] Warnings:', error);
             } else {
                 new Notice('Successfully exported via Pandoc to ' + outputFile);
+                console.log('[Pandoc] Successfully exported to ' + outputFile);
             }
             if (this.settings.showCLICommands) {
                 new Notice('Pandoc command: ' + command, 10000);
-                console.log(command);
+                console.log('[Pandoc] Command:', command);
             }
 
         } catch (e) {
             new Notice('Pandoc export failed: ' + e.toString(), 15000);
-            console.error(e);
+            console.error('[Pandoc] Export failed:', e);
         }
     }
 

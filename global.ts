@@ -41,6 +41,8 @@ export interface PandocPluginSettings {
     underscoreItalicFix: boolean,
     // Pre-processing: user-defined find/replace rules applied before export
     preprocessRules: PreprocessRule[],
+    // Metadata: map Korean YAML keys (제목→title/subtitle, 작가→author)
+    mapKoreanMetadata: boolean,
 }
 
 export const DEFAULT_SETTINGS: PandocPluginSettings = {
@@ -59,6 +61,7 @@ export const DEFAULT_SETTINGS: PandocPluginSettings = {
     exportFrom: 'html',
     underscoreItalicFix: false,
     preprocessRules: [],
+    mapKoreanMetadata: false,
 }
 
 export function replaceFileExtension(file: string, ext: string): string {

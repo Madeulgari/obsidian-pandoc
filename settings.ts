@@ -170,6 +170,16 @@ export default class PandocPluginSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        new Setting(containerEl)
+            .setName('Map Korean YAML metadata')
+            .setDesc('Maps Korean frontmatter keys to Pandoc metadata. 제목 → title (원제), 파일명 → subtitle (번역 제목), 작가 → author (내부링크 자동 제거). 제목 없으면 파일명만 title로 사용.')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.mapKoreanMetadata)
+                .onChange(async (value: boolean) => {
+                    this.plugin.settings.mapKoreanMetadata = value;
+                    await this.plugin.saveSettings();
+                }));
+
         // User-defined rules section
         containerEl.createEl('h4', { text: 'Custom find & replace rules' });
 

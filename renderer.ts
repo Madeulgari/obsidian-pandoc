@@ -16,7 +16,7 @@ import { FileSystemAdapter, MarkdownRenderer, MarkdownView, Notice } from 'obsid
 
 import PandocPlugin from './main';
 import { PandocPluginSettings } from './global';
-import { applyPreprocess } from './preprocess';
+import { applyPreprocess, extractKoreanMetadata } from './preprocess';
 import mathJaxFontCSS from './styles/mathjax-css';
 import appCSS, { variables as appCSSVariables } from './styles/app-css';
 import { outputFormats } from 'pandoc';
@@ -40,9 +40,52 @@ export default async function render (plugin: PandocPlugin, view: MarkdownView,
     let html = wrapper.innerHTML;
     document.body.removeChild(wrapper);
 
+    // Fix image paths in the HTML string for non-HTML output formats.
+    // DOM-level img.src manipulation is not reliable because innerHTML serialization
+    // can re-encode paths (Unicode escapes, app:// URLs, etc.).
+    // We do a string-level replacement here instead.
+    if (outputFormat !== 'html') {
+        const vaultBase = (plugin.app.vault.adapter as FileSystemAdapter).getBasePath();
+        const inputDir = path.dirname(inputFile);
+        const appPrefix = 'app://obsidian.md/';
+
+        html = html.replace(/src="([^"]+)"/g, (_match, src) => {
+            let resolved: string;
+
+            if (src.startsWith(appPrefix)) {
+                // Absolute vault path encoded as app://obsidian.md/...
+                const decoded = decodeURIComponent(src.substring(appPrefix.length));
+                resolved = path.join(vaultBase, decoded);
+            } else if (!src.startsWith('http') && !src.startsWith('data:')) {
+                // Relative path — resolve from the source file's directory
+                const decoded = decodeURIComponent(src);
+                resolved = path.resolve(inputDir, decoded);
+            } else {
+                return _match;
+            }
+
+            console.log('[Pandoc] Resolving image (string):', src, '→', resolved);
+            return `src="${resolved}"`;
+        });
+    }
+
     // If it's a top level note, make the HTML a standalone document - inject CSS, a <title>, etc.
     const metadata = getYAMLMetadata(markdown);
-    metadata.title ??= fileBaseName(inputFile);
+
+    if (plugin.settings.mapKoreanMetadata) {
+        const koreanMeta = extractKoreanMetadata(markdown);
+        if (koreanMeta.author && !metadata.author) {
+            metadata.author = koreanMeta.author;
+        }
+        if (koreanMeta.title) {
+            metadata.title = koreanMeta.title;
+            metadata.subtitle ??= fileBaseName(inputFile);
+        } else {
+            metadata.title ??= fileBaseName(inputFile);
+        }
+    } else {
+        metadata.title ??= fileBaseName(inputFile);
+    }
     if (parentFiles.length === 0) {
         html = await standaloneHTML(plugin.settings, html, metadata.title, plugin.vaultBasePath());
     }
@@ -83,6 +126,7 @@ async function getCustomCSS(settings: PandocPluginSettings, vaultBasePath: strin
 
     if(!buffer) {
         new Notice('Failed to load custom Pandoc CSS file: ' + settings.customCSSFile);
+        console.error('[Pandoc] Failed to load custom CSS file:', settings.customCSSFile);
         return '';
     } else {
         return buffer.toString();
@@ -232,7 +276,10 @@ async function postProcessRenderedHTML(plugin: PandocPlugin, inputFile: string, 
     if (outputFormat !== 'html') {
         for (let img of Array.from(wrapper.querySelectorAll('img'))) {
             if (img.src.startsWith(prefix) && img.getAttribute('data-touched') !== 'true') {
-                img.src = adapter.getFullPath(img.src.substring(prefix.length));
+                const decoded = decodeURIComponent(img.src.substring(prefix.length));
+                const fullPath = adapter.getFullPath(decoded);
+                console.log('[Pandoc] Resolving image:', img.src, '→', fullPath);
+                img.src = fullPath;
                 img.setAttribute('data-touched', 'true');
             }
         }

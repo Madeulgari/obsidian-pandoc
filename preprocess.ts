@@ -49,6 +49,98 @@ function applyRule(markdown: string, rule: PreprocessRule): string {
     }
 }
 
+// ── 내부링크 [[link]] 또는 [[link|display]] → display 또는 link 로 변환
+const INTERNAL_LINK_RE = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+
+function stripInternalLink(value: string): string {
+    return value.replace(INTERNAL_LINK_RE, (_match, link, display) =>
+        display ? display.trim() : link.trim()
+    );
+}
+
+function stripQuotes(value: string): string {
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))) {
+        return value.slice(1, -1);
+    }
+    return value;
+}
+
+/**
+ * YAML 프론트매터에서 한글 키(제목, 작가)를 읽어
+ * Pandoc용 메타데이터로 변환합니다.
+ *
+ * - 제목 → title (있으면), 없으면 null
+ * - 작가 → author 배열 (내부링크 제거), 없으면 null
+ */
+export function extractKoreanMetadata(markdown: string): {
+    title: string | null;
+    author: string[] | null;
+} {
+    const frontmatterMatch = markdown.trim().match(/^---\s*\n([\s\S]*?)\n---/);
+    if (!frontmatterMatch) return { title: null, author: null };
+
+    const lines = frontmatterMatch[1].split('\n');
+
+    let title: string | null = null;
+    let author: string[] | null = null;
+
+    let currentKey = '';
+    let isArray = false;
+    let arrayItems: string[] = [];
+
+    const flushKey = () => {
+        if (!currentKey) return;
+        if (currentKey === '제목' && !isArray && arrayItems.length === 0) {
+            // 이미 인라인 값으로 처리됨
+        }
+        if (currentKey === '작가' && isArray) {
+            author = arrayItems
+                .map(item => stripInternalLink(stripQuotes(item)))
+                .filter(v => v.length > 0);
+        }
+        currentKey = '';
+        isArray = false;
+        arrayItems = [];
+    };
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        if (trimmed.startsWith('- ')) {
+            if (isArray) {
+                arrayItems.push(trimmed.substring(2).trim());
+            }
+            continue;
+        }
+
+        const kvMatch = trimmed.match(/^([^:]+):\s*(.*)$/);
+        if (kvMatch) {
+            flushKey();
+            currentKey = kvMatch[1].trim();
+            const value = kvMatch[2].trim();
+
+            if (!value) {
+                isArray = true;
+                arrayItems = [];
+            } else {
+                isArray = false;
+                arrayItems = [];
+                if (currentKey === '제목') {
+                    title = stripInternalLink(stripQuotes(value));
+                }
+                // 인라인 값이므로 flushKey 불필요 — currentKey 초기화
+                currentKey = '';
+            }
+        }
+    }
+    // 마지막 키 처리
+    flushKey();
+
+    return { title, author };
+}
+
 /**
  * Main entry point.
  * Applies all enabled preprocessing steps to `markdown` and returns the result.

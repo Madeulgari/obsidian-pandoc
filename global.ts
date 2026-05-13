@@ -43,6 +43,11 @@ export interface PandocPluginSettings {
     preprocessRules: PreprocessRule[],
     // Metadata: map Korean YAML keys (제목→title/subtitle, 작가→author)
     mapKoreanMetadata: boolean,
+    // Metadata templates: free-form strings with {filename}, {h1}, {yaml:키} variables
+    // If a template resolves to an empty string, the field is omitted from metadata
+    titleTemplate: string,
+    subtitleTemplate: string,
+    authorTemplate: string,
 }
 
 export const DEFAULT_SETTINGS: PandocPluginSettings = {
@@ -62,6 +67,9 @@ export const DEFAULT_SETTINGS: PandocPluginSettings = {
     underscoreItalicFix: false,
     preprocessRules: [],
     mapKoreanMetadata: false,
+    titleTemplate: '',
+    subtitleTemplate: '',
+    authorTemplate: '',
 }
 
 export function replaceFileExtension(file: string, ext: string): string {

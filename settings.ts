@@ -180,6 +180,47 @@ export default class PandocPluginSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        // ── Metadata templates ──────────────────────────────────────────────
+
+        containerEl.createEl('h4', { text: 'Metadata templates' });
+        containerEl.createEl('p', {
+            text: 'Free-form templates for Pandoc metadata fields. Available variables: {filename}, {h1}, {yaml:키}. If the resolved value is empty or the variable does not exist, the field is omitted.',
+            cls: 'setting-item-description',
+        });
+
+        new Setting(containerEl)
+            .setName('Title template')
+            .setDesc('e.g. {yaml:제목} or {h1} or {filename}')
+            .addText(text => text
+                .setPlaceholder('{filename}')
+                .setValue(this.plugin.settings.titleTemplate)
+                .onChange(async (value: string) => {
+                    this.plugin.settings.titleTemplate = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Subtitle template')
+            .setDesc('e.g. {filename} or {yaml:파일명}')
+            .addText(text => text
+                .setPlaceholder('')
+                .setValue(this.plugin.settings.subtitleTemplate)
+                .onChange(async (value: string) => {
+                    this.plugin.settings.subtitleTemplate = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Author template')
+            .setDesc('e.g. {yaml:작가} (배열이면 전체 반환) or {yaml:저자}')
+            .addText(text => text
+                .setPlaceholder('{yaml:작가}')
+                .setValue(this.plugin.settings.authorTemplate)
+                .onChange(async (value: string) => {
+                    this.plugin.settings.authorTemplate = value;
+                    await this.plugin.saveSettings();
+                }));
+
         // User-defined rules section
         containerEl.createEl('h4', { text: 'Custom find & replace rules' });
 

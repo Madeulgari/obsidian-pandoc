@@ -17,7 +17,7 @@ import * as YAML from 'yaml';
 import * as temp from 'temp';
 
 import render from './renderer';
-import { applyPreprocess, extractKoreanMetadata } from './preprocess';
+import { applyPreprocess, extractKoreanMetadata, buildTemplateContext, renderTemplate, renderAuthorTemplate } from './preprocess';
 import PandocPluginSettingTab from './settings';
 import { PandocPluginSettings, DEFAULT_SETTINGS, replaceFileExtension } from './global';
 export default class PandocPlugin extends Plugin {
@@ -167,7 +167,27 @@ export default class PandocPlugin extends Plugin {
 
                     const baseName = path.basename(inputFile, path.extname(inputFile));
                     const mdMetadata: Record<string, any> = {};
-                    if (this.settings.mapKoreanMetadata) {
+
+                    const hasTemplates = this.settings.titleTemplate.trim()
+                        || this.settings.subtitleTemplate.trim()
+                        || this.settings.authorTemplate.trim();
+
+                    if (hasTemplates) {
+                        // 템플릿 기반 메타데이터 구성
+                        const ctx = buildTemplateContext(rawMarkdown, inputFile);
+
+                        const title = renderTemplate(this.settings.titleTemplate, ctx);
+                        if (title) mdMetadata.title = title;
+                        else if (!this.settings.titleTemplate.trim()) mdMetadata.title = baseName; // 템플릿 미설정 시 파일명 폴백
+
+                        const subtitle = renderTemplate(this.settings.subtitleTemplate, ctx);
+                        if (subtitle) mdMetadata.subtitle = subtitle;
+
+                        const author = renderAuthorTemplate(this.settings.authorTemplate, ctx);
+                        if (author) mdMetadata.author = author;
+
+                    } else if (this.settings.mapKoreanMetadata) {
+                        // 기존 한국어 메타데이터 매핑 (템플릿 미설정 시 하위 호환)
                         const koreanMeta = extractKoreanMetadata(rawMarkdown);
                         if (koreanMeta.author) mdMetadata.author = koreanMeta.author;
                         if (koreanMeta.title) {

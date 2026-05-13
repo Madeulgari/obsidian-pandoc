@@ -6,7 +6,135 @@
  *
  */
 
+import * as path from 'path';
 import { PandocPluginSettings, PreprocessRule } from './global';
+
+// ── 템플릿 변수 컨텍스트 ────────────────────────────────────────────────────
+export interface TemplateContext {
+    filename: string;           // 확장자 제거한 파일명
+    h1: string | null;          // 문서 내 첫 번째 H1 텍스트 (없으면 null)
+    yaml: Record<string, any>;  // 파싱된 YAML 프론트매터 전체
+}
+
+/**
+ * 마크다운에서 첫 번째 H1 헤딩 텍스트를 추출합니다.
+ * 프론트매터 블록은 건너뜁니다.
+ */
+function extractFirstH1(markdown: string): string | null {
+    const body = markdown.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, '');
+    const match = body.match(/^#{1}\s+(.+)$/m);
+    return match ? match[1].trim() : null;
+}
+
+/**
+ * 마크다운 프론트매터 전체를 key→value 맵으로 파싱합니다.
+ * 배열(- 항목)은 string[] 로, 인라인 값은 string 으로 반환합니다.
+ */
+function parseYAMLFrontmatter(markdown: string): Record<string, any> {
+    const frontmatterMatch = markdown.trim().match(/^---\s*\n([\s\S]*?)\n---/);
+    if (!frontmatterMatch) return {};
+
+    const result: Record<string, any> = {};
+    const lines = frontmatterMatch[1].split('\n');
+    let currentKey = '';
+    let arrayItems: string[] = [];
+    let isArray = false;
+
+    const flush = () => {
+        if (!currentKey) return;
+        if (isArray) result[currentKey] = arrayItems.map(v => stripInternalLink(stripQuotes(v)));
+        currentKey = '';
+        isArray = false;
+        arrayItems = [];
+    };
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith('- ')) {
+            if (isArray) arrayItems.push(trimmed.substring(2).trim());
+            continue;
+        }
+        const kvMatch = trimmed.match(/^([^:]+):\s*(.*)$/);
+        if (kvMatch) {
+            flush();
+            currentKey = kvMatch[1].trim();
+            const value = kvMatch[2].trim();
+            if (!value) {
+                isArray = true;
+                arrayItems = [];
+            } else {
+                result[currentKey] = stripInternalLink(stripQuotes(value));
+                currentKey = '';
+            }
+        }
+    }
+    flush();
+    return result;
+}
+
+/**
+ * 템플릿 문자열을 컨텍스트로 렌더링합니다.
+ *
+ * 지원 변수:
+ *   {filename}       확장자 제거한 파일명
+ *   {h1}             문서 첫 번째 H1 (없으면 빈 문자열)
+ *   {yaml:키}        YAML 프론트매터의 특정 키 값
+ *                    값이 배열이면 첫 번째 항목만 사용
+ *
+ * 변수가 존재하지 않으면 해당 자리를 빈 문자열로 치환합니다.
+ * 렌더링 결과가 공백만 남으면 null을 반환합니다.
+ */
+export function renderTemplate(template: string, ctx: TemplateContext): string | null {
+    if (!template.trim()) return null;
+
+    const result = template.replace(/\{(\w+)(?::([^}]+))?\}/g, (_match, key, subkey) => {
+        if (key === 'filename') return ctx.filename;
+        if (key === 'h1') return ctx.h1 ?? '';
+        if (key === 'yaml' && subkey) {
+            const val = ctx.yaml[subkey];
+            if (val === undefined || val === null) return '';
+            if (Array.isArray(val)) return val[0] ?? '';
+            return String(val);
+        }
+        return '';
+    });
+
+    return result.trim() || null;
+}
+
+/**
+ * author 필드 전용 템플릿 렌더러.
+ * {yaml:키} 하나만 지정하고 그 값이 배열이면 배열 전체를 반환합니다.
+ * 그 외 경우는 일반 렌더링 후 string[] 로 반환합니다.
+ * 결과가 비어 있으면 null을 반환합니다.
+ */
+export function renderAuthorTemplate(template: string, ctx: TemplateContext): string[] | null {
+    if (!template.trim()) return null;
+
+    // {yaml:키} 단독 패턴이면 배열 그대로 반환
+    const singleYamlMatch = template.trim().match(/^\{yaml:([^}]+)\}$/);
+    if (singleYamlMatch) {
+        const val = ctx.yaml[singleYamlMatch[1]];
+        if (Array.isArray(val) && val.length > 0) return val;
+        if (typeof val === 'string' && val.trim()) return [val.trim()];
+        return null;
+    }
+
+    const rendered = renderTemplate(template, ctx);
+    return rendered ? [rendered] : null;
+}
+
+/**
+ * 마크다운과 파일 경로로부터 TemplateContext를 생성합니다.
+ */
+export function buildTemplateContext(markdown: string, filePath: string): TemplateContext {
+    return {
+        filename: path.basename(filePath, path.extname(filePath)),
+        h1: extractFirstH1(markdown),
+        yaml: parseYAMLFrontmatter(markdown),
+    };
+}
 
 /**
  * Converts _italic_ syntax (underscore-based) to *italic* syntax (asterisk-based).
